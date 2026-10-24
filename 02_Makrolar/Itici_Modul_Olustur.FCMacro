@@ -1,0 +1,78 @@
+# Itici_Modul_Olustur.FCMacro  -  "Olculer" tablosundaki değerlerle itici modülü (yeniden) oluşturur
+import FreeCAD as App, Part, math
+from FreeCAD import Vector as V
+def box(x0,x1,y0,y1,z0,z1): return Part.makeBox(x1-x0,y1-y0,z1-z0,V(x0,y0,z0))
+def cy(r,p,d,L): return Part.makeCylinder(r,L,p,d)
+Y=V(0,1,0)
+def hexprism(af,cx,cz,y0,L):
+    r=af/math.sqrt(3)
+    pts=[V(cx+r*math.cos(math.radians(30+60*k)),y0,cz+r*math.sin(math.radians(30+60*k))) for k in range(7)]
+    return Part.Face(Part.makePolygon(pts)).extrude(V(0,L,0))
+
+def build(doc):
+    s=doc.getObject("Olculer"); g=lambda n: float(s.get("p_"+n))
+    W=g("W"); BT=g("BT"); D=g("D"); LB=g("LB"); TIP=g("TIP"); FLW=g("FLW"); FLT=g("FLT")
+    PC=g("PC"); ST=g("ST"); HD=g("HD"); HT=g("HT"); ROD=g("ROD"); NAF=g("NAF"); NT=g("NT")
+    MW=g("MW"); MH=g("MH"); ML=g("ML"); SL=g("SL"); CD=g("CD"); CL=g("CL"); C=g("C")
+    SWL=g("SWL"); SWW=g("SWW"); SWH=g("SWH"); H=g("H"); PH=g("PH")
+    xs=-W/2+2+D/2; xr=g("XR"); zc=BT+D/2+1
+    yHc=-LB-FLT-PC; yHo=yHc-ST                    # piston başı arka yüzü (kapalı / açık)
+    yWf=yHo-3-1; yWr=yWf-3                         # arka duvar
+    yEnd=yWr-SWH                                   # arka switch arkası
+    out={}
+    # ---- TABAN + duvarlar ----
+    base=box(-W/2,W/2,yEnd,-1,0,BT)
+    # ön beşik (snap)
+    fc=box(xs-D/2-2,xs+D/2+1.5,-24,-14,BT,zc+5).cut(cy(D/2+C,V(xs,-25,zc),Y,12))
+    # kanat beşiği
+    kb=box(-W/2,xs+FLW/2+1.5,-LB-FLT-3,-LB+3,BT,zc+6)
+    kb=kb.cut(cy(D/2+C,V(xs,-LB-FLT-4,zc),Y,LB+10)).cut(box(xs-FLW/2-C,xs+FLW/2+C,-LB-FLT-C,-LB+C,zc-9,zc+7))
+    # arka duvar (mil yatağı + switch kolu yarığı)
+    rw=box(-W/2,W/2,yWr,yWf,BT,H).cut(cy(ROD/2+0.2,V(xr,yWr-1,zc),Y,5)).cut(box(xr-3,xr+3,yWr-1,yWf+1,zc+3,zc+9))
+    # motor kelepçesi
+    mc=box(xr-MW/2-1.2,W/2,-2-ML,-2,BT,zc+MH/2+1.5).cut(box(xr-MW/2-C,xr+MW/2+C,-3-ML,-1,zc-MH/2-C,zc+MH/2+C))
+    mc=mc.cut(box(xr-0.5,xr+0.5,-2-ML-1,-1,zc+MH/2-1,zc+MH/2+2))
+    # ön switch tutucu
+    ys0=yHc+HT+3+1; ys1=ys0+SWL
+    sh=box(xr+SWW/2+0.2,W/2,ys0,ys1,BT,zc+3+SWH)
+    for dy in (-3.25,3.25):
+        sh=sh.cut(cy(1.0,V(xr+SWW/2-1,0,zc+3+SWH/2),V(1,0,0),W).translated(V(0,(ys0+ys1)/2+dy,0)))
+    # tavan direkleri (üst plakaya M3)
+    posts=box(-W/2,-W/2+6,-6,-1,BT,PH).fuse(box(-W/2,-W/2+6,yWr,yWf,BT,PH))
+    for yy in (-3.5,(yWr+yWf)/2): posts=posts.cut(cy(1.25,V(-W/2+3,yy,PH-10),V(0,0,1),11))
+    tab=base.fuse([fc,kb,rw,mc,sh,posts]).removeSplitter()
+    out["Taban"]=(tab,(0.9,0.75,0.3))
+    # ---- KIZAK (piston başını tutar, somun yuvası) ----
+    def kizak(yH):
+        k=box(-W/2+1.2,W/2-1.2,yH-3,yH+HT+3,BT+C,H)
+        k=k.cut(cy(HD/2+C,V(xs,yH-C,zc),Y,HT+2*C)).cut(box(xs-HD/2-C,xs+HD/2+C,yH-C,yH+HT+C,zc,H+1))
+        k=k.cut(box(xs-5.5,xs+5.5,yH+HT,yH+HT+4,zc-5.5,H+1))          # piston kolu geçişi
+        k=k.cut(cy(ROD/2+0.4,V(xr,yH-4,zc),Y,HT+8)).cut(hexprism(NAF+C,xr,zc,yH+HT/2-NT/2-C/2,NT+C))
+        k=k.cut(box(xr-(NAF+C)/2,xr+(NAF+C)/2,yH+HT/2-NT/2-C/2,yH+HT/2+NT/2+C/2,zc,H+1))  # somun üstten girer
+        return k
+    out["Kizak"]=(kizak(yHc),(0.3,0.6,0.9))
+    # ---- GÖSTERİM: şırınga, mil, motor, kaplin, switchler ----
+    syr=cy(D/2,V(xs,-LB,zc),Y,LB-TIP).fuse(cy(2.0,V(xs,-TIP,zc),Y,TIP)).cut(cy(D/2-1,V(xs,-LB-1,zc),Y,LB-TIP))
+    syr=syr.fuse(box(xs-FLW/2,xs+FLW/2,-LB-FLT,-LB,zc-8,zc+8))
+    pl=cy(HD/2,V(xs,yHc,zc),Y,HT).fuse(box(xs-4.5,xs+4.5,yHc+HT,-LB+5,zc-1,zc+1)).fuse(box(xs-1,xs+1,yHc+HT,-LB+5,zc-4.5,zc+4.5))
+    out["Siringa"]=(syr,(0.85,0.95,1.0)); out["Piston"]=(pl,(0.95,0.95,0.95))
+    out["Mil_M4"]=(cy(ROD/2,V(xr,yWr,zc),Y,(-2-ML-SL-1)-yWr),(0.6,0.6,0.6))
+    out["N20"]=(box(xr-MW/2,xr+MW/2,-2-ML,-2,zc-MH/2,zc+MH/2).fuse(cy(1.5,V(xr,-2-ML-SL,zc),Y,SL)),(0.7,0.7,0.75))
+    out["Kaplin"]=(cy(CD/2,V(xr,-2-ML-CL+2,zc),Y,CL-2),(0.8,0.5,0.2))
+    swf=box(xr-SWW/2,xr+SWW/2,ys0,ys1,zc+3,zc+3+SWH)
+    swr=box(xr-SWW/2,xr+SWW/2,yEnd,yWr,zc+3,zc+3+SWH)
+    out["Switchler"]=(swf.fuse(swr),(0.1,0.1,0.1))
+    for n,(shp,col) in out.items():
+        o=doc.getObject(n) or doc.addObject("Part::Feature",n)
+        o.Shape=shp; o.ViewObject.ShapeColor=col
+    for n in ("Siringa","Piston","Mil_M4","N20","Kaplin","Switchler"):
+        doc.getObject(n).ViewObject.Transparency=40
+    doc.recompute()
+    return {"boy":-yEnd-1,"yEnd":yEnd,"yHc":yHc,"yHo":yHo}
+
+if __name__=="__main__" or True:
+    try:
+        d=App.getDocument("Itici_Modul")
+        r=build(d); App.Console.PrintMessage("Itici modul guncellendi: %s\n"%r)
+    except Exception as e:
+        App.Console.PrintError("Hata: %s\n"%e)
