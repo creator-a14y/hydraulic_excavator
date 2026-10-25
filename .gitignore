@@ -1,0 +1,11 @@
+# FreeCAD otomatik yedekleri (Git geçmişi zaten tutuyor)
+*.FCBak
+*.fcbak
+_Yedekler/
+
+# FreeCAD / işletim sistemi geçici dosyaları
+*.FCStd1
+__pycache__/
+Thumbs.db
+desktop.ini
+.DS_Store
